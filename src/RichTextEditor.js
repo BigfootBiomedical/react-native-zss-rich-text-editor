@@ -1,6 +1,6 @@
 import React, {Component} from 'react';
 import PropTypes from 'prop-types';
-import WebViewBridge from 'react-native-webview-bridge-updated';
+import {WebView} from 'react-native-webview';
 import {InjectedMessageHandler} from './WebviewMessageHandler';
 import {actions, messages} from './const';
 import {Modal, View, Text, StyleSheet, TextInput, TouchableOpacity, Platform, PixelRatio, Keyboard, Dimensions} from 'react-native';
@@ -169,7 +169,7 @@ export default class RichTextEditor extends Component {
           }
           break;
         case messages.SCROLL:
-          this.webviewBridge.setNativeProps({contentOffset: {y: message.data}});
+          // this.webviewBridge.setNativeProps({contentOffset: {y: message.data}});
           break;
         case messages.TITLE_FOCUSED:
           this.titleFocusHandler && this.titleFocusHandler();
@@ -298,15 +298,16 @@ export default class RichTextEditor extends Component {
     const pageSource = PlatformIOS ? require('./editor.html') : { uri: 'file:///android_asset/editor.html' };
     return (
       <View style={{flex: 1}}>
-        <WebViewBridge
+        <WebView
           {...this.props}
           hideKeyboardAccessoryView={true}
           keyboardDisplayRequiresUserAction={false}
-          ref={(r) => {this.webviewBridge = r}}
-          onBridgeMessage={(message) => this.onBridgeMessage(message)}
+          ref={(r) => {this.webRef = r}}
+          onMessage={(e) => this.onBridgeMessage(e.nativeEvent.data)}
           injectedJavaScript={injectScript}
           source={pageSource}
           onLoad={() => this.init()}
+          originWhitelist={['file://', 'http://']}
         />
         {this._renderLinkModal()}
       </View>
@@ -329,7 +330,22 @@ export default class RichTextEditor extends Component {
   _sendAction(action, data) {
     let jsonString = JSON.stringify({type: action, data});
     jsonString = this.escapeJSONString(jsonString);
-    this.webviewBridge.sendToBridge(jsonString);
+    const run = `
+        window.WebViewBridge.onMessage("${jsonString}");
+        true;
+      `;
+    setTimeout(() => {
+      if (!this.webRef) {
+        console.warn('webRef not defined... from WKWebView');
+        return;
+      }
+      this.webRef.injectJavaScript(run);
+    }, 500);
+  }
+  webviewBridge = {
+    sendToBridge: json => {
+      
+    }
   }
 
   //-------------------------------------------------------------------------------
@@ -469,8 +485,8 @@ export default class RichTextEditor extends Component {
   }
 
   insertImage(attributes) {
+    this.prepareInsert(); //This must be called before insertImage.
     this._sendAction(actions.insertImage, attributes);
-    this.prepareInsert(); //This must be called BEFORE insertImage. But WebViewBridge uses a stack :/
   }
 
   setSubscript() {
